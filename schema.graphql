@@ -1,0 +1,11 @@
+type Post @table @export {
+	id: ID @primaryKey
+	title: String
+	body: String
+	comments: [String]
+}
+
+type BlogCache @table(expiration: 3600) @export {
+	id: ID @primaryKey
+	content: String
+}

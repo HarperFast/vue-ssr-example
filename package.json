@@ -1,0 +1,21 @@
+{
+	"name": "vue-ssr-example",
+	"private": true,
+	"type": "module",
+	"scripts": {
+		"build:client": "vite build --outDir dist/client",
+		"build:server": "vite build --ssr src/entry-server.js --outDir dist/server",
+		"build": "npm run build:client && npm run build:server",
+		"format": "prettier --write ."
+	},
+	"dependencies": {
+		"@vitejs/plugin-vue": "^5.1.4",
+		"vite": "^5.4.9",
+		"vue": "^3.5.12"
+	},
+	"devDependencies": {
+		"@harperdb/code-guidelines": "^0.0.1",
+		"prettier": "^3.3.3"
+	},
+	"prettier": "@harperdb/code-guidelines/prettier"
+}

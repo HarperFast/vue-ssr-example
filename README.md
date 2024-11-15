@@ -31,3 +31,5 @@ curl -X PATCH http://localhost:9926/Post/0 \
 -H "Content-Type: application/json" \
 -d '{ "comments": [] }'
 ```
+
+- This repo includes a `caching-test.js` script for quickly demonstrating and validating the caching behavior. Give it a try with `node caching-test.js` (component must be running with HarperDB).

@@ -17,5 +17,6 @@
 		"@harperdb/code-guidelines": "^0.0.1",
 		"prettier": "^3.3.3"
 	},
-	"prettier": "@harperdb/code-guidelines/prettier"
+	"prettier": "@harperdb/code-guidelines/prettier",
+	"license": "Apache-2.0"
 }

@@ -26,19 +26,21 @@ async function renderPost(post) {
 }
 
 export class UncachedBlog extends tables.Post {
-	static async get(target, context) {
+	static async get(target) {
+		const post = await tables.Post.get(target);
 		return {
 			status: 200,
 			headers: { 'Content-Type': 'text/html' },
-			body: await renderPost(target),
+			body: await renderPost(post),
 		};
 	}
 }
 
 class PageBuilder extends tables.Post {
-	static async get(target, context) {
+	static async get(target) {
+		const post = await tables.Post.get(target);
 		return {
-			content: await renderPost(target),
+			content: await renderPost(post),
 		};
 	}
 }
@@ -46,11 +48,12 @@ class PageBuilder extends tables.Post {
 tables.BlogCache.sourcedFrom(PageBuilder);
 
 export class CachedBlog extends tables.BlogCache {
-	static async get(target, context) {
+	static async get(target) {
+		const cached = await tables.BlogCache.get(target);
 		return {
 			status: 200,
 			headers: { 'Content-Type': 'text/html' },
-			body: target.content,
+			body: cached.content,
 		};
 	}
 }

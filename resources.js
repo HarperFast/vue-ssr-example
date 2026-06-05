@@ -50,10 +50,14 @@ tables.BlogCache.sourcedFrom(PageBuilder);
 export class CachedBlog extends tables.BlogCache {
 	static async get(target) {
 		const cached = await tables.BlogCache.get(target);
+		// Return { contentType, data } rather than a full { status, headers, body }
+		// response: when the response carries a `headers` property Harper treats it
+		// as a complete Response and skips its conditional-request handling, so no
+		// ETag/Last-Modified is emitted and 304s never happen. The `contentType`
+		// shape sets Content-Type while leaving caching to the BlogCache record.
 		return {
-			status: 200,
-			headers: { 'Content-Type': 'text/html' },
-			body: cached.content,
+			contentType: 'text/html',
+			data: cached.content,
 		};
 	}
 }

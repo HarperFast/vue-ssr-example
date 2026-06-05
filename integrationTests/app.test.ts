@@ -54,7 +54,7 @@ void suite('Vue SSR example', (ctx: ContextWithHarper) => {
 	void test('GET /UncachedBlog/0 server-side renders the blog as HTML', async () => {
 		const res = await authFetch(ctx, '/UncachedBlog/0');
 		strictEqual(res.status, 200);
-		strictEqual(res.headers.get('Content-Type'), 'text/html');
+		ok(res.headers.get('Content-Type')?.startsWith('text/html'), 'expected text/html content type');
 		const html = await res.text();
 		// SSR output should contain the rendered post content + the hydration data script.
 		ok(html.includes('<!DOCTYPE html>') || html.includes('<html'), 'expected a full HTML document');
@@ -64,7 +64,7 @@ void suite('Vue SSR example', (ctx: ContextWithHarper) => {
 	void test('GET /CachedBlog/0 server-side renders the blog as HTML', async () => {
 		const res = await authFetch(ctx, '/CachedBlog/0');
 		strictEqual(res.status, 200);
-		strictEqual(res.headers.get('Content-Type'), 'text/html');
+		ok(res.headers.get('Content-Type')?.startsWith('text/html'), 'expected text/html content type');
 		const html = await res.text();
 		ok(html.includes('__INITIAL_POST_DATA__'), 'expected SSR hydration data in cached render');
 	});

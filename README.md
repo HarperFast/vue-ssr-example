@@ -1,6 +1,6 @@
-# HarperDB Vue SSR Example
+# Harper Vue SSR Example
 
-This repo is an example of how to implement Vue SSR using HarperDB Resources to efficiently generate a _Blog_ from a database of _Posts_.
+This repo is an example of how to implement Vue SSR using Harper Resources to efficiently generate a _Blog_ from a database of _Posts_.
 
 It includes complete client side hydration as well, resulting in a fully interactive web app experience.
 
@@ -11,7 +11,7 @@ It includes complete client side hydration as well, resulting in a fully interac
 
 1. `npm i`
 2. `npm build`
-3. `harperdb run .`
+3. `harper run .`
 4. Navigate to [/UncachedBlog/0](http://localhost:9926/UncachedBlog/0) or [/CachedBlog/0](http://localhost:9926/CachedBlog/0)
 5. Add or remove comments!
 
@@ -35,4 +35,4 @@ curl -X PATCH http://localhost:9926/Post/0 \
 -d '{ "comments": [] }'
 ```
 
-- This repo includes a `caching-test.js` script for quickly demonstrating and validating the caching behavior. Give it a try with `node caching-test.js` (component must be running with HarperDB).
+- This repo includes a `caching-test.js` script for quickly demonstrating and validating the caching behavior. Give it a try with `node caching-test.js` (component must be running with Harper).

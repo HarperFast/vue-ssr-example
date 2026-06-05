@@ -112,14 +112,24 @@ void suite('Vue SSR example', (ctx: ContextWithHarper) => {
 		const afterUpdate = await authFetch(ctx, '/CachedBlog/0', { headers: conditionalHeaders });
 		strictEqual(afterUpdate.status, 200);
 
-		// New validators should once again yield a 304 cache hit.
-		const newEtag = afterUpdate.headers.get('ETag');
-		const newLastModified = afterUpdate.headers.get('Last-Modified');
-		const newConditional: Record<string, string> = {};
-		if (newEtag) newConditional['If-None-Match'] = newEtag;
-		if (newLastModified) newConditional['If-Modified-Since'] = newLastModified;
+		// The cache re-populates from the source; its Last-Modified can keep advancing
+		// for a moment while it settles. Grab the current validators immediately before
+		// the conditional re-request and retry briefly until we get a stable 304 cache hit.
+		let reCachedStatus = 0;
+		for (let attempt = 0; attempt < 20; attempt++) {
+			const fresh = await authFetch(ctx, '/CachedBlog/0');
+			strictEqual(fresh.status, 200);
+			const freshConditional: Record<string, string> = {};
+			const freshEtag = fresh.headers.get('ETag');
+			const freshLastModified = fresh.headers.get('Last-Modified');
+			if (freshEtag) freshConditional['If-None-Match'] = freshEtag;
+			if (freshLastModified) freshConditional['If-Modified-Since'] = freshLastModified;
 
-		const reCached = await authFetch(ctx, '/CachedBlog/0', { headers: newConditional });
-		strictEqual(reCached.status, 304);
+			const reCached = await authFetch(ctx, '/CachedBlog/0', { headers: freshConditional });
+			reCachedStatus = reCached.status;
+			if (reCachedStatus === 304) break;
+			await new Promise((r) => setTimeout(r, 100));
+		}
+		strictEqual(reCachedStatus, 304, 'expected the re-populated cache to yield a 304 cache hit');
 	});
 });

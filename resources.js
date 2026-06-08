@@ -26,8 +26,8 @@ async function renderPost(post) {
 }
 
 export class UncachedBlog extends tables.Post {
-	static async get(target) {
-		const post = await tables.Post.get(target);
+	async get(query) {
+		const post = await super.get(query);
 		return {
 			status: 200,
 			headers: { 'Content-Type': 'text/html' },
@@ -36,9 +36,12 @@ export class UncachedBlog extends tables.Post {
 	}
 }
 
+// Caching source for BlogCache. In v5 a caching source resolves per-id through
+// an instance `get`, so the cache instantiates this resource for the requested
+// id and calls `get()`; `super.get()` returns the underlying Post record.
 class PageBuilder extends tables.Post {
-	static async get(target) {
-		const post = await tables.Post.get(target);
+	async get(query) {
+		const post = await super.get(query);
 		return {
 			content: await renderPost(post),
 		};
@@ -48,8 +51,8 @@ class PageBuilder extends tables.Post {
 tables.BlogCache.sourcedFrom(PageBuilder);
 
 export class CachedBlog extends tables.BlogCache {
-	static async get(target) {
-		const cached = await tables.BlogCache.get(target);
+	async get(query) {
+		const cached = await super.get(query);
 		// Return { contentType, data } rather than a full { status, headers, body }
 		// response: when the response carries a `headers` property Harper treats it
 		// as a complete Response and skips its conditional-request handling, so no

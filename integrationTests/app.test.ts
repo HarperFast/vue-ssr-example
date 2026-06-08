@@ -61,12 +61,21 @@ void suite('Vue SSR example', (ctx: ContextWithHarper) => {
 		ok(html.includes('__INITIAL_POST_DATA__'), 'expected SSR hydration data to be injected');
 	});
 
-	void test('GET /CachedBlog/0 server-side renders the blog as HTML', async () => {
+	void test('GET /CachedBlog/0 serves a non-empty cached SSR HTML body', async () => {
+		// The seeded Post/0 title; the cached render must include it so an empty/raw
+		// cache record (the static-get bug, where cached.content was undefined and the
+		// body came back empty) fails this assertion.
+		const post = (await (await authFetch(ctx, '/Post/0')).json()) as { title: string };
+
 		const res = await authFetch(ctx, '/CachedBlog/0');
 		strictEqual(res.status, 200);
 		ok(res.headers.get('Content-Type')?.startsWith('text/html'), 'expected text/html content type');
 		const html = await res.text();
+
+		ok(html.length > 0, 'expected a non-empty cached HTML body');
+		ok(html.includes('<!DOCTYPE html>') || html.includes('<html'), 'expected a full HTML document');
 		ok(html.includes('__INITIAL_POST_DATA__'), 'expected SSR hydration data in cached render');
+		ok(html.includes(post.title), `expected the rendered cached HTML to contain the post title "${post.title}"`);
 	});
 
 	void test('CachedBlog returns 304 on a conditional re-request (cache hit)', async () => {

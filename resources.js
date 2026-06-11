@@ -20,7 +20,7 @@ async function renderPost(post) {
 	const html = template
 		.replace(`<!--app-head-->`, rendered.head ?? '')
 		.replace(`<!--app-html-->`, rendered.html ?? '')
-		.replace(`<!--app-data-->`, `<script>window.__INITIAL_POST_DATA__ = ${JSON.stringify(post)};</script>`);
+		.replace(`<!--app-data-->`, `<script>window.__INITIAL_POST_DATA__ = ${JSON.stringify(post).replace(/</g, '\\u003c').replace(/>/g, '\\u003e')};</script>`);
 
 	return html;
 }
@@ -28,6 +28,7 @@ async function renderPost(post) {
 export class UncachedBlog extends tables.Post {
 	async get(query) {
 		const post = await super.get(query);
+		if (!post) return { status: 404 };
 		return {
 			status: 200,
 			headers: { 'Content-Type': 'text/html' },
@@ -42,6 +43,7 @@ export class UncachedBlog extends tables.Post {
 class PageBuilder extends tables.Post {
 	async get(query) {
 		const post = await super.get(query);
+		if (!post) return null;
 		return {
 			content: await renderPost(post),
 		};
@@ -53,6 +55,7 @@ tables.BlogCache.sourcedFrom(PageBuilder);
 export class CachedBlog extends tables.BlogCache {
 	async get(query) {
 		const cached = await super.get(query);
+		if (!cached) return { status: 404 };
 		// Return { contentType, data } rather than a full { status, headers, body }
 		// response: when the response carries a `headers` property Harper treats it
 		// as a complete Response and skips its conditional-request handling, so no

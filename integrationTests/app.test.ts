@@ -31,7 +31,14 @@ void suite('Vue SSR example', (ctx: ContextWithHarper) => {
 		// The SSR component imports ./dist/server/entry-server.js and serves
 		// ./dist/client/index.html, so the Vite build must exist before the
 		// fixture (the whole repo dir) is copied into the Harper install.
-		if (!existsSync(resolve(FIXTURE_PATH, 'dist/server/entry-server.js'))) {
+		// Check both build outputs: a partial build (e.g. `build:server` without
+		// `build:client`, or a CI run that failed mid-build) would otherwise pass
+		// this guard and then fail at Harper startup with an opaque ENOENT on
+		// dist/client/index.html.
+		if (
+			!existsSync(resolve(FIXTURE_PATH, 'dist/server/entry-server.js')) ||
+			!existsSync(resolve(FIXTURE_PATH, 'dist/client/index.html'))
+		) {
 			execFileSync('npm', ['run', 'build'], { cwd: FIXTURE_PATH, stdio: 'inherit' });
 		}
 		await setupHarperWithFixture(ctx, FIXTURE_PATH, { harperBinPath });
@@ -127,7 +134,10 @@ void suite('Vue SSR example', (ctx: ContextWithHarper) => {
 		let reCachedStatus = 0;
 		for (let attempt = 0; attempt < 20; attempt++) {
 			const fresh = await authFetch(ctx, '/CachedBlog/0');
-			strictEqual(fresh.status, 200);
+			// Not strictEqual: a failure here would abort the loop and mask the
+			// real signal (the outer 304-settle assertion). Name the attempt so a
+			// genuine re-population error stays distinguishable from a timeout.
+			ok(fresh.status === 200, `expected 200 from /CachedBlog/0 on attempt ${attempt}, got ${fresh.status}`);
 			const freshConditional: Record<string, string> = {};
 			const freshEtag = fresh.headers.get('ETag');
 			const freshLastModified = fresh.headers.get('Last-Modified');

@@ -1,0 +1,154 @@
+import { suite, test, before, after } from 'node:test';
+import { strictEqual, ok } from 'node:assert/strict';
+import { setupHarperWithFixture, teardownHarper, type ContextWithHarper } from '@harperfast/integration-testing';
+import { fileURLToPath } from 'node:url';
+import { dirname, resolve } from 'node:path';
+import { existsSync } from 'node:fs';
+import { execFileSync } from 'node:child_process';
+import { createRequire } from 'node:module';
+
+const __dirname = dirname(fileURLToPath(import.meta.url));
+const FIXTURE_PATH = resolve(__dirname, '..');
+
+// The `harper` package's `exports` map only exposes ".", so the harness's
+// auto-resolution of 'harper/dist/bin/harper.js' fails with ERR_PACKAGE_PATH_NOT_EXPORTED.
+// Resolve the CLI from the (exported) main entry and pass it explicitly.
+const require = createRequire(import.meta.url);
+const harperBinPath = resolve(dirname(require.resolve('harper')), 'bin/harper.js');
+
+function authFetch(
+	ctx: ContextWithHarper,
+	path: string,
+	init: RequestInit & { headers?: Record<string, string> } = {}
+) {
+	const { headers = {}, ...rest } = init;
+	const creds = Buffer.from(`${ctx.harper.admin.username}:${ctx.harper.admin.password}`).toString('base64');
+	return fetch(`${ctx.harper.httpURL}${path}`, { ...rest, headers: { Authorization: `Basic ${creds}`, ...headers } });
+}
+
+void suite('Vue SSR example', (ctx: ContextWithHarper) => {
+	before(async () => {
+		// The SSR component imports ./dist/server/entry-server.js and serves
+		// ./dist/client/index.html, so the Vite build must exist before the
+		// fixture (the whole repo dir) is copied into the Harper install.
+		// Check both build outputs: a partial build (e.g. `build:server` without
+		// `build:client`, or a CI run that failed mid-build) would otherwise pass
+		// this guard and then fail at Harper startup with an opaque ENOENT on
+		// dist/client/index.html.
+		if (
+			!existsSync(resolve(FIXTURE_PATH, 'dist/server/entry-server.js')) ||
+			!existsSync(resolve(FIXTURE_PATH, 'dist/client/index.html'))
+		) {
+			execFileSync('npm', ['run', 'build'], { cwd: FIXTURE_PATH, stdio: 'inherit' });
+		}
+		await setupHarperWithFixture(ctx, FIXTURE_PATH, { harperBinPath });
+	});
+
+	after(async () => {
+		await teardownHarper(ctx);
+	});
+
+	void test('Harper starts and the Post REST table is seeded', async () => {
+		// resources.js seeds Post/0 on startup.
+		const res = await authFetch(ctx, '/Post/0');
+		strictEqual(res.status, 200);
+		const body = (await res.json()) as { id: string; title: string; comments: string[] };
+		strictEqual(body.id, '0');
+		ok(body.title, 'expected a seeded title');
+		ok(Array.isArray(body.comments), 'expected a comments array');
+	});
+
+	void test('GET /UncachedBlog/0 server-side renders the blog as HTML', async () => {
+		const res = await authFetch(ctx, '/UncachedBlog/0');
+		strictEqual(res.status, 200);
+		ok(res.headers.get('Content-Type')?.startsWith('text/html'), 'expected text/html content type');
+		const html = await res.text();
+		// SSR output should contain the rendered post content + the hydration data script.
+		ok(html.includes('<!DOCTYPE html>') || html.includes('<html'), 'expected a full HTML document');
+		ok(html.includes('__INITIAL_POST_DATA__'), 'expected SSR hydration data to be injected');
+	});
+
+	void test('GET /CachedBlog/0 serves a non-empty cached SSR HTML body', async () => {
+		// The seeded Post/0 title; the cached render must include it so an empty/raw
+		// cache record (the static-get bug, where cached.content was undefined and the
+		// body came back empty) fails this assertion.
+		const post = (await (await authFetch(ctx, '/Post/0')).json()) as { title: string };
+
+		const res = await authFetch(ctx, '/CachedBlog/0');
+		strictEqual(res.status, 200);
+		ok(res.headers.get('Content-Type')?.startsWith('text/html'), 'expected text/html content type');
+		const html = await res.text();
+
+		ok(html.length > 0, 'expected a non-empty cached HTML body');
+		ok(html.includes('<!DOCTYPE html>') || html.includes('<html'), 'expected a full HTML document');
+		ok(html.includes('__INITIAL_POST_DATA__'), 'expected SSR hydration data in cached render');
+		ok(html.includes(post.title), `expected the rendered cached HTML to contain the post title "${post.title}"`);
+	});
+
+	void test('CachedBlog returns 304 on a conditional re-request (cache hit)', async () => {
+		const first = await authFetch(ctx, '/CachedBlog/0');
+		strictEqual(first.status, 200);
+		const etag = first.headers.get('ETag');
+		const lastModified = first.headers.get('Last-Modified');
+		ok(etag || lastModified, 'expected a cache validator header (ETag or Last-Modified)');
+
+		const conditionalHeaders: Record<string, string> = {};
+		if (etag) conditionalHeaders['If-None-Match'] = etag;
+		if (lastModified) conditionalHeaders['If-Modified-Since'] = lastModified;
+
+		const second = await authFetch(ctx, '/CachedBlog/0', { headers: conditionalHeaders });
+		strictEqual(second.status, 304);
+	});
+
+	void test('Updating the Post invalidates the cache, then re-caches', async () => {
+		// Prime the cache and grab validators.
+		const primed = await authFetch(ctx, '/CachedBlog/0');
+		strictEqual(primed.status, 200);
+		const etag = primed.headers.get('ETag');
+		const lastModified = primed.headers.get('Last-Modified');
+
+		const conditionalHeaders: Record<string, string> = {};
+		if (etag) conditionalHeaders['If-None-Match'] = etag;
+		if (lastModified) conditionalHeaders['If-Modified-Since'] = lastModified;
+
+		// Confirm it's currently a cache hit.
+		const hit = await authFetch(ctx, '/CachedBlog/0', { headers: conditionalHeaders });
+		strictEqual(hit.status, 304);
+
+		// Mutate the source Post via REST PATCH.
+		const current = (await (await authFetch(ctx, '/Post/0')).json()) as { comments: string[] };
+		const patch = await authFetch(ctx, '/Post/0', {
+			method: 'PATCH',
+			headers: { 'Content-Type': 'application/json' },
+			body: JSON.stringify({ comments: current.comments.concat(`Test comment ${Math.random()}`) }),
+		});
+		ok(patch.ok, `expected PATCH to succeed, got ${patch.status}`);
+
+		// The same conditional request should now miss the cache (source changed) -> 200.
+		const afterUpdate = await authFetch(ctx, '/CachedBlog/0', { headers: conditionalHeaders });
+		strictEqual(afterUpdate.status, 200);
+
+		// The cache re-populates from the source; its Last-Modified can keep advancing
+		// for a moment while it settles. Grab the current validators immediately before
+		// the conditional re-request and retry briefly until we get a stable 304 cache hit.
+		let reCachedStatus = 0;
+		for (let attempt = 0; attempt < 20; attempt++) {
+			const fresh = await authFetch(ctx, '/CachedBlog/0');
+			// Not strictEqual: a failure here would abort the loop and mask the
+			// real signal (the outer 304-settle assertion). Name the attempt so a
+			// genuine re-population error stays distinguishable from a timeout.
+			ok(fresh.status === 200, `expected 200 from /CachedBlog/0 on attempt ${attempt}, got ${fresh.status}`);
+			const freshConditional: Record<string, string> = {};
+			const freshEtag = fresh.headers.get('ETag');
+			const freshLastModified = fresh.headers.get('Last-Modified');
+			if (freshEtag) freshConditional['If-None-Match'] = freshEtag;
+			if (freshLastModified) freshConditional['If-Modified-Since'] = freshLastModified;
+
+			const reCached = await authFetch(ctx, '/CachedBlog/0', { headers: freshConditional });
+			reCachedStatus = reCached.status;
+			if (reCachedStatus === 304) break;
+			await new Promise((r) => setTimeout(r, 100));
+		}
+		strictEqual(reCachedStatus, 304, 'expected the re-populated cache to yield a 304 cache hit');
+	});
+});
